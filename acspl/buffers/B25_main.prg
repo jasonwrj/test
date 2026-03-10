@@ -1,9 +1,4 @@
 #25
-
-! 教学式注释: Buffer #25 机器人轴换相启动程序
-! 目的: 对机器人相关轴执行换相(Commutation Startup), 在 detent 点间跳转并确认电机状态。
-! 输入条件: 由上层Buffer(例如#30)通过 START 25,1 启动; 轴硬件使能且无致命故障。
-! 输出效果: 成功时置 MFLAGS(SP_Axis).9=1; 失败时设置 SP_Fail_Code 并结束。
 !robot arm motors cummutation ini program
 
 !Change log
@@ -36,17 +31,12 @@ real SP_Pitch                     ! Magnetic pitch [180 elec.deg. in user units]
 int  SP_InCommutationStartup      ! Flag indicating commutation startup is in progress
 
 
-! ---- 主流程循环 ----
-! 目的: 依次对两根机器人轴执行换相参数设置与detent移动。
-! 输入条件: SP_Axis 初始为0, 第二次循环切换为 ROBOTAXISNUML。
-! 输出效果: 两轴换相状态更新。
 LOOP 2
 
 
 SP_Pitch=SLCPRD(SP_Axis)/SLCNP(SP_Axis)*EFAC(SP_Axis)
 
 !******************************************************************************* 
-! 目的: 清故障、禁用轴、重置换相状态并写入初始相位。
 ! INITIALIZE
 FCLEAR(SP_Axis)   
 disable(SP_Axis)
@@ -87,22 +77,17 @@ call Limit_Check
 !   The program moves the motor 90 electrical degrees in order to eliminate
 !      a state of unstable equilibrium.
 
-! 目的: 执行 detent 点位移动, 避免不稳定平衡点。
-! 输入条件: SP_Direction/SP_Pitch/SP_Search_Vel 已计算。
-! 输出效果: 到位后再次检查限位故障。
 Move_Detent:
 ptp/rv (SP_Axis), SP_Direction*SP_Pitch/2.,SP_Search_Vel
 till ^AST(SP_Axis).#MOVE; wait SP_Settle_Time
 call Limit_Check
 disable(SP_Axis)
 
-! MFLAGS: 轴标志字。此处 .9 常用于表示换相状态(1=已换相)。
 MFLAGS(SP_Axis).9=1               ! Set commutation state 
 DCOM(SP_Axis) = 0
 
 ! If motor is to be left enabled after startup process delete the following line:
 
-! 结束段: 输出成功/失败信息并清理状态标志。
 Finish:
 SP_InCommutationStartup=0              ! commutation startup is finished
 If SP_Fail_Code=0; disp " Axis %i  Commutation Startup Finished.", SP_Axis
@@ -110,16 +95,11 @@ else disp "   Commutation Startup Failed."; disp "   Failure Code = %i",SP_Fail_
 
 SP_Axis=ROBOTAXISNUML 
 END
-! 结束条件: 两轴流程完成或异常退出后停止本Buffer。
 STOP
 
 !******************************************************************************* 
 !   The following routine move the motor away from limit switches 
 
-! ---- 子程序 Limit_Check ----
-! 目的: 检查MERR/限位故障, 必要时反向搜索脱离限位。
-! 输入条件: 轴当前故障状态(MERR/FAULT)。
-! 输出效果: 正常则 RET, 异常则置 SP_Fail_Code 并跳转 Finish。
 Limit_Check:
 if MERR(SP_Axis) & MERR(SP_Axis)<>5010 & MERR(SP_Axis)<>5011; SP_Fail_Code=1; DISABLE(SP_Axis); DCOM(SP_Axis)=0; goto Finish; end
 !   if MERR(SP_Axis); SP_Fail_Code=1; DISABLE(SP_Axis); DCOM(SP_Axis)=0; goto Finish; end 
@@ -132,7 +112,6 @@ if (FAULT(SP_Axis).#LL)|(FAULT(SP_Axis).#RL)
 end
 ret
 
-! 事件处理: 换相过程中若出现系统/轴故障, 立即关闭驱动并走失败流程。
 ON ((SP_InCommutationStartup = 1) & ((FAULT(SP_Axis)&0x30f80)>0 | (S_FAULT&0x30000000)>0))
 SP_Fail_Code=1; DISABLE(SP_Axis); DCOM(SP_Axis)=0
 CALL Finish 
